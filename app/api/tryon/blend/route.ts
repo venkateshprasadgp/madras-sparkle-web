@@ -63,10 +63,14 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (!product) return NextResponse.json({ error: "Unknown product." }, { status: 404 });
     category = product.category;
-    try {
-      jewelry = await fetchAsInline(product.transparent_png_url);
-    } catch {
-      jewelry = parseDataUrl(body.overlay);
+    // Prefer the client overlay: it has the studio background already removed.
+    jewelry = parseDataUrl(body.overlay);
+    if (!jewelry) {
+      try {
+        jewelry = await fetchAsInline(product.transparent_png_url);
+      } catch {
+        jewelry = null;
+      }
     }
   } else {
     const product = DEMO_PRODUCTS.find((p) => p.sku_id === sku);

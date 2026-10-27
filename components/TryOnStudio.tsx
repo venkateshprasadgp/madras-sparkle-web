@@ -15,6 +15,7 @@ import type { Product } from "@/lib/types";
 import { CATEGORIES, QUOTA_EXCEEDED_MESSAGE } from "@/lib/constants";
 import { DEFAULT_PLACEMENT } from "@/lib/tryon";
 import { downloadDataUrl, fileToDataUrl, loadImage } from "@/lib/photo";
+import { removeBackground } from "@/lib/removeBackground";
 import { usePhotoBuffer } from "@/lib/usePhotoBuffer";
 import { useVisitor } from "./VisitorProvider";
 import PhotoPrivacyControls from "./PhotoPrivacyControls";
@@ -52,7 +53,7 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const photoImg = useRef<HTMLImageElement | null>(null);
-  const jewelryImg = useRef<HTMLImageElement | null>(null);
+  const jewelryImg = useRef<HTMLCanvasElement | null>(null);
   const pointers = useRef<Map<number, PointerInfo>>(new Map());
   const gesture = useRef<{ dist: number; angle: number; scale: number; rotation: number } | null>(null);
   const [assetsVersion, setAssetsVersion] = useState(0);
@@ -83,7 +84,16 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
     if (!selected) return;
     loadImage(selected.transparent_png_url, true)
       .then((img) => {
-        jewelryImg.current = img;
+        try {
+          jewelryImg.current = removeBackground(img);
+        } catch {
+          // Canvas tainted by host CORS settings: fall back to the original image.
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          c.getContext("2d")!.drawImage(img, 0, 0);
+          jewelryImg.current = c;
+        }
         setAssetsVersion((v) => v + 1);
       })
       .catch(() => setError("Could not load this jewellery image."));
@@ -124,7 +134,7 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
     const jewel = jewelryImg.current;
     if (!jewel || !selected || !overlayActive) return;
     const w = canvas.width * DEFAULT_PLACEMENT[selected.category].width * transform.scale;
-    const h = w * (jewel.naturalHeight / jewel.naturalWidth);
+    const h = w * (jewel.height / jewel.width);
     ctx.save();
     ctx.translate(transform.x * canvas.width, transform.y * canvas.height);
     ctx.rotate((transform.rotation * Math.PI) / 180);
@@ -220,12 +230,8 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
   }
 
   function rasterizeJewelry(): string | null {
-    const img = jewelryImg.current;
-    if (!img) return null;
-    const c = document.createElement("canvas");
-    c.width = img.naturalWidth || 800;
-    c.height = img.naturalHeight || 800;
-    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    const c = jewelryImg.current;
+    if (!c) return null;
     try {
       return c.toDataURL("image/png");
     } catch {
