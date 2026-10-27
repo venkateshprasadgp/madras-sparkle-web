@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Camera,
   CircleAlert,
   ImagePlus,
   LoaderCircle,
@@ -313,13 +314,32 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
       <div className="space-y-4">
         <div className="card relative flex min-h-[420px] items-center justify-center overflow-hidden p-2">
           {!photo ? (
-            <label className="flex cursor-pointer flex-col items-center gap-3 p-12 text-center">
+            <div className="flex flex-col items-center gap-3 p-8 text-center sm:p-12">
               <ImagePlus className="h-12 w-12 text-gold" />
-              <span className="font-heading text-xl text-neutral-100">Upload Your Photo</span>
+              <span className="font-heading text-xl text-neutral-100">Add Your Photo</span>
               <span className="text-sm text-neutral-400">Front-facing, good lighting, neck and ears visible</span>
-              <span className="btn-gold mt-2">Choose Photo</span>
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => onPhotoSelected(e.target.files?.[0])} />
-            </label>
+              <div className="mt-2 flex flex-wrap justify-center gap-3">
+                <label className="btn-gold touch-only cursor-pointer">
+                  <Camera className="h-4 w-4" /> Take Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    className="hidden"
+                    onChange={(e) => onPhotoSelected(e.target.files?.[0])}
+                  />
+                </label>
+                <label className="btn-gold cursor-pointer">
+                  <ImagePlus className="h-4 w-4" /> Upload Photo
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => onPhotoSelected(e.target.files?.[0])}
+                  />
+                </label>
+              </div>
+            </div>
           ) : (
             <>
               <canvas
