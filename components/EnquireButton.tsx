@@ -22,7 +22,7 @@ export default function EnquireButton({
       <button type="button" className={className} onClick={() => setOpen(true)}>
         {icon} {label}
       </button>
-      <WhatsAppModal open={open} onClose={() => setOpen(false)} product={product} />
+      {open && <WhatsAppModal open onClose={() => setOpen(false)} product={product} />}
     </>
   );
 }

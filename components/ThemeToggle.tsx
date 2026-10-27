@@ -17,7 +17,10 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
 
   function toggle() {
     const next = !dark;
-    document.documentElement.classList.toggle("dark", next);
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    root.classList.toggle("dark", next);
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
     try {
       localStorage.setItem(THEME_KEY, next ? "dark" : "light");
     } catch {

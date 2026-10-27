@@ -1,9 +1,13 @@
 import { notFound } from "next/navigation";
 import { getProducts } from "@/lib/data";
-import { categoryFromSlug } from "@/lib/constants";
+import { CATEGORIES, categoryFromSlug } from "@/lib/constants";
 import CollectionView from "@/components/CollectionView";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
+
+export function generateStaticParams() {
+  return CATEGORIES.map((c) => ({ category: c.slug }));
+}
 
 export function generateMetadata({ params }: { params: { category: string } }) {
   const cat = categoryFromSlug(params.category);

@@ -24,10 +24,10 @@ export default function MediaGallery({ items }: { items: GalleryItem[] }) {
             className={`group relative overflow-hidden rounded-xl bg-card ${i === 0 ? "col-span-2 row-span-2" : ""}`}
           >
             {item.type === "video" ? (
-              <video src={item.src} poster={item.poster} muted loop playsInline className="aspect-square h-full w-full object-cover" />
+              <video src={item.src} poster={item.poster} muted loop playsInline preload="metadata" className="aspect-square h-full w-full object-cover" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.src} alt={item.caption} className="aspect-square h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              <img src={item.src} alt={item.caption} loading="lazy" decoding="async" className="aspect-square h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
             )}
             {item.type === "video" && (
               <span className="absolute inset-0 flex items-center justify-center">

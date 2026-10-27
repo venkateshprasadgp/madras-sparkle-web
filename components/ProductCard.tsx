@@ -7,13 +7,15 @@ import EnquireButton from "./EnquireButton";
 
 export default function ProductCard({ product }: { product: Product }) {
   return (
-    <div className="card group flex flex-col overflow-hidden transition hover:-translate-y-0.5 hover:border-maroon/30 hover:shadow-lg">
+    <div className="card group flex flex-col overflow-hidden transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-maroon/30 hover:shadow-lg">
       <Link href={`/products/${encodeURIComponent(product.sku_id)}`} className="relative block aspect-square overflow-hidden bg-neutral-900">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={product.featured_image_url}
           alt={product.title}
-          className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
         <span className="absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-[10px] uppercase tracking-widest text-gold backdrop-blur">
           {product.jewelry_type}
