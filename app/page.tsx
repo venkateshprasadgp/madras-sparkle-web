@@ -6,7 +6,7 @@ import ProductCard from "@/components/ProductCard";
 import MediaGallery, { type GalleryItem } from "@/components/MediaGallery";
 import EnquireButton from "@/components/EnquireButton";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 const CATEGORY_ICONS: Record<string, string> = {
   NECKLACE: "/demo/necklace.svg",
@@ -122,7 +122,7 @@ export default async function HomePage() {
             <Link key={c.value} href={`/collections/${c.slug}`} className="group flex flex-col items-center gap-3 text-center">
               <span className="flex aspect-square w-full max-w-[120px] items-center justify-center rounded-full border-2 border-gold/40 bg-cream p-5 shadow-sm transition group-hover:border-maroon group-hover:shadow-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={CATEGORY_ICONS[c.value]} alt="" className="h-full w-full object-contain transition group-hover:scale-110" />
+                <img src={CATEGORY_ICONS[c.value]} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain transition group-hover:scale-110" />
               </span>
               <span className="text-sm font-medium text-neutral-200 group-hover:text-maroon">{c.label}</span>
             </Link>

@@ -54,6 +54,8 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
+// Public storefront pages read only public data, so they skip the per-request
+// Supabase auth round trip; the browser client refreshes visitor sessions itself.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|demo/|.*\\.(?:svg|png|jpg|jpeg|webp|mp4)$).*)"],
+  matcher: ["/admin/:path*", "/api/:path*"],
 };

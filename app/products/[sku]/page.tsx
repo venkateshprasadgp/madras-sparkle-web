@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Sparkles } from "lucide-react";
-import { getProductBySku } from "@/lib/data";
+import { getProductBySku, getProducts } from "@/lib/data";
 import { categoryFromSlug, categoryLabel, CATEGORIES } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import EnquireButton from "@/components/EnquireButton";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
+
+export async function generateStaticParams() {
+  const products = await getProducts();
+  return products.map((p) => ({ sku: p.sku_id }));
+}
 
 export async function generateMetadata({ params }: { params: { sku: string } }) {
   const product = await getProductBySku(decodeURIComponent(params.sku));
@@ -24,7 +29,7 @@ export default async function ProductPage({ params }: { params: { sku: string } 
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={product.featured_image_url} alt={product.title} className="card aspect-square w-full object-cover" />
         {product.video_url && (
-          <video src={product.video_url} controls playsInline poster={product.featured_image_url} className="card w-full" />
+          <video src={product.video_url} controls playsInline preload="metadata" poster={product.featured_image_url} className="card w-full" />
         )}
       </div>
       <div className="space-y-5">

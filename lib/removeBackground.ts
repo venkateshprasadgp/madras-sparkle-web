@@ -30,35 +30,42 @@ export function removeBackground(img: HTMLImageElement): HTMLCanvasElement {
   const transparentBorder = border.filter((i) => px[i * 4 + 3] < 128).length;
   if (transparentBorder > border.length * 0.5) return canvas;
 
-  const bg = medianColor(px, border);
-  const dist = (i: number) => {
+  const [br, bgG, bb] = medianColor(px, border);
+  const dist2 = (i: number) => {
     const o = i * 4;
-    return Math.hypot(px[o] - bg[0], px[o + 1] - bg[1], px[o + 2] - bg[2]);
+    const dr = px[o] - br;
+    const dg = px[o + 1] - bgG;
+    const db = px[o + 2] - bb;
+    return dr * dr + dg * dg + db * db;
   };
+  const HARD2 = HARD * HARD;
+  const SOFT2 = SOFT * SOFT;
 
   const visited = new Uint8Array(w * h);
-  const stack: number[] = [];
-  for (const i of border) {
-    if (!visited[i] && dist(i) < SOFT) {
-      visited[i] = 1;
-      stack.push(i);
+  const stack = new Int32Array(w * h);
+  let top = 0;
+  const visit = (n: number) => {
+    if (!visited[n] && dist2(n) < SOFT2) {
+      visited[n] = 1;
+      stack[top++] = n;
     }
-  }
-  while (stack.length) {
-    const i = stack.pop()!;
-    const d = dist(i);
-    const alpha = d <= HARD ? 0 : Math.round(((d - HARD) / (SOFT - HARD)) * 255);
-    px[i * 4 + 3] = Math.min(px[i * 4 + 3], alpha);
-    if (d > HARD) continue; // soft edge pixel: keep it, don't spread through it
+  };
+  for (const i of border) visit(i);
+  while (top > 0) {
+    const i = stack[--top];
+    const d2 = dist2(i);
+    if (d2 > HARD2) {
+      // Soft edge pixel: fade it, but don't spread through it.
+      const alpha = Math.round(((Math.sqrt(d2) - HARD) / (SOFT - HARD)) * 255);
+      px[i * 4 + 3] = Math.min(px[i * 4 + 3], alpha);
+      continue;
+    }
+    px[i * 4 + 3] = 0;
     const x = i % w;
-    const y = (i - x) / w;
-    const next = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1];
-    for (const n of next) {
-      if (n >= 0 && !visited[n] && dist(n) < SOFT) {
-        visited[n] = 1;
-        stack.push(n);
-      }
-    }
+    if (x > 0) visit(i - 1);
+    if (x < w - 1) visit(i + 1);
+    if (i >= w) visit(i - w);
+    if (i < w * (h - 1)) visit(i + w);
   }
   ctx.putImageData(image, 0, 0);
   return trim(canvas, px, w, h);

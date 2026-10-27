@@ -51,7 +51,26 @@ html {
 }
 
 body {
-  @apply bg-royal font-sans text-neutral-200 antialiased transition-colors;
+  @apply bg-royal font-sans text-neutral-200 antialiased;
+}
+
+/* Remove the mobile double-tap-zoom delay and grey tap flash so taps register instantly. */
+a,
+button,
+label,
+summary,
+select,
+input[type="checkbox"],
+input[type="radio"],
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Skip colour transitions while switching theme so the swap is a single repaint. */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
 }
 
 @layer components {
@@ -62,13 +81,13 @@ body {
     @apply bg-gold-gradient bg-clip-text text-transparent;
   }
   .btn-gold {
-    @apply inline-flex items-center justify-center gap-2 rounded-full bg-maroon px-6 py-2.5 text-sm font-semibold text-royal shadow-md shadow-maroon/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-maroon px-6 py-2.5 text-sm font-semibold text-royal shadow-md shadow-maroon/20 transition duration-150 ease-out hover:brightness-110 active:scale-[0.97] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .dark .btn-gold {
     @apply bg-gold-gradient shadow-gold/10;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 rounded-full border border-maroon/60 px-6 py-2.5 text-sm font-semibold text-maroon transition hover:bg-maroon/10 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-maroon/60 px-6 py-2.5 text-sm font-semibold text-maroon transition duration-150 ease-out hover:bg-maroon/10 active:scale-[0.97] active:bg-maroon/15 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .card {
     @apply rounded-2xl border border-neutral-800 bg-card shadow-sm dark:shadow-none;

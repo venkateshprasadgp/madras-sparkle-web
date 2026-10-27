@@ -1,10 +1,12 @@
+import { Suspense } from "react";
+import { LoaderCircle } from "lucide-react";
 import { getProducts } from "@/lib/data";
 import TryOnStudio from "@/components/TryOnStudio";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 export const metadata = { title: "Virtual Try-On Studio | Madras Sparkle" };
 
-export default async function TryOnPage({ searchParams }: { searchParams: { sku?: string } }) {
+export default async function TryOnPage() {
   const products = await getProducts();
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
@@ -13,7 +15,15 @@ export default async function TryOnPage({ searchParams }: { searchParams: { sku?
         Upload a front-facing photo, place a piece by hand, then let our AI blend it photorealistically.
       </p>
       <div className="mt-8">
-        <TryOnStudio products={products} initialSku={searchParams.sku} />
+        <Suspense
+          fallback={
+            <div className="card flex h-96 items-center justify-center">
+              <LoaderCircle className="h-6 w-6 animate-spin text-gold" />
+            </div>
+          }
+        >
+          <TryOnStudio products={products} />
+        </Suspense>
       </div>
     </section>
   );

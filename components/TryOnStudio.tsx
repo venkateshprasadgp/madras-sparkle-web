@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Camera,
   CircleAlert,
@@ -31,11 +32,15 @@ interface Transform {
 
 type PointerInfo = { x: number; y: number };
 
+// Background removal is CPU-heavy; keep each processed piece so re-selecting it is instant.
+const jewelryCache = new Map<string, HTMLCanvasElement>();
+
 function defaultTransform(product: Product | null): Transform {
   return { x: 0.5, y: product ? DEFAULT_PLACEMENT[product.category].y : 0.6, scale: 1, rotation: 0 };
 }
 
-export default function TryOnStudio({ products, initialSku }: { products: Product[]; initialSku?: string }) {
+export default function TryOnStudio({ products }: { products: Product[] }) {
+  const initialSku = useSearchParams().get("sku") ?? undefined;
   const { ready, visitor, maxTryons, requestRegistration, consumeTryon } = useVisitor();
   const { photo, save: savePhoto, clear: clearPhoto } = usePhotoBuffer();
 
@@ -81,23 +86,42 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
   // Load the selected jewelry asset.
   useEffect(() => {
     jewelryImg.current = null;
+    if (!selected) {
+      setAssetsVersion((v) => v + 1);
+      return;
+    }
+    const url = selected.transparent_png_url;
+    const cached = jewelryCache.get(url);
+    if (cached) {
+      jewelryImg.current = cached;
+      setAssetsVersion((v) => v + 1);
+      return;
+    }
     setAssetsVersion((v) => v + 1);
-    if (!selected) return;
-    loadImage(selected.transparent_png_url, true)
+    let cancelled = false;
+    loadImage(url, true)
       .then((img) => {
+        let processed: HTMLCanvasElement;
         try {
-          jewelryImg.current = removeBackground(img);
+          processed = removeBackground(img);
         } catch {
           // Canvas tainted by host CORS settings: fall back to the original image.
-          const c = document.createElement("canvas");
-          c.width = img.naturalWidth;
-          c.height = img.naturalHeight;
-          c.getContext("2d")!.drawImage(img, 0, 0);
-          jewelryImg.current = c;
+          processed = document.createElement("canvas");
+          processed.width = img.naturalWidth;
+          processed.height = img.naturalHeight;
+          processed.getContext("2d")!.drawImage(img, 0, 0);
         }
+        jewelryCache.set(url, processed);
+        if (cancelled) return;
+        jewelryImg.current = processed;
         setAssetsVersion((v) => v + 1);
       })
-      .catch(() => setError("Could not load this jewellery image."));
+      .catch(() => {
+        if (!cancelled) setError("Could not load this jewellery image.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selected]);
 
   // Quota check whenever a photo + product pair is ready.
@@ -128,8 +152,11 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
     const canvas = canvasRef.current;
     const base = photoImg.current;
     if (!canvas || !base) return;
-    canvas.width = base.naturalWidth;
-    canvas.height = base.naturalHeight;
+    // Resizing reallocates the canvas buffer, so only do it when the photo changes.
+    if (canvas.width !== base.naturalWidth || canvas.height !== base.naturalHeight) {
+      canvas.width = base.naturalWidth;
+      canvas.height = base.naturalHeight;
+    }
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(base, 0, 0);
     const jewel = jewelryImg.current;
@@ -413,7 +440,7 @@ export default function TryOnStudio({ products, initialSku }: { products: Produc
                 className={`overflow-hidden rounded-lg border-2 ${selected?.id === p.id ? "border-gold" : "border-transparent hover:border-gold/40"}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.featured_image_url} alt={p.title} className="aspect-square w-full object-cover" />
+                <img src={p.featured_image_url} alt={p.title} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
               </button>
             ))}
           </div>

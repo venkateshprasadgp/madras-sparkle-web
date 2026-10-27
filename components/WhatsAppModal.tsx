@@ -40,7 +40,7 @@ export default function WhatsAppModal({ open, onClose, product }: Props) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
       <div className="card relative w-full max-w-md space-y-5 p-6">
         <button onClick={onClose} className="absolute right-4 top-4 text-neutral-500 hover:text-gold" aria-label="Close">
           <X className="h-5 w-5" />
