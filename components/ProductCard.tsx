@@ -7,8 +7,8 @@ import EnquireButton from "./EnquireButton";
 
 export default function ProductCard({ product }: { product: Product }) {
   return (
-    <div className="card group flex flex-col overflow-hidden transition hover:border-gold/30">
-      <Link href={`/products/${encodeURIComponent(product.sku_id)}`} className="relative block aspect-square overflow-hidden bg-royal">
+    <div className="card group flex flex-col overflow-hidden transition hover:-translate-y-0.5 hover:border-maroon/30 hover:shadow-lg">
+      <Link href={`/products/${encodeURIComponent(product.sku_id)}`} className="relative block aspect-square overflow-hidden bg-neutral-900">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={product.featured_image_url}
@@ -21,11 +21,11 @@ export default function ProductCard({ product }: { product: Product }) {
       </Link>
       <div className="flex flex-1 flex-col p-4">
         <p className="text-[11px] uppercase tracking-widest text-neutral-500">{categoryLabel(product.category)}</p>
-        <Link href={`/products/${encodeURIComponent(product.sku_id)}`} className="mt-1 font-heading text-lg text-neutral-100 hover:text-gold">
+        <Link href={`/products/${encodeURIComponent(product.sku_id)}`} className="mt-1 font-heading text-lg text-neutral-100 hover:text-maroon">
           {product.title}
         </Link>
         <p className="font-mono text-xs text-gold/80">{product.sku_id}</p>
-        <p className="mt-2 text-sm text-neutral-300">
+        <p className="mt-2 text-sm font-semibold text-maroon">
           {product.show_indicative_price && product.indicative_price !== null
             ? `From ${formatPrice(product.indicative_price)}`
             : "Price on consultation"}

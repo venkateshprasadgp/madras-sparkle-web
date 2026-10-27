@@ -3,6 +3,7 @@ import { Crown, Database, Gem, House, Image as ImageIcon, LogOut, Package, Setti
 import { requireStaff } from "@/lib/auth";
 import { MANAGER_ROLES } from "@/lib/constants";
 import { signOut } from "../login/actions";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -41,15 +42,19 @@ export default async function CmsLayout({ children }: { children: React.ReactNod
         <div className="border-t border-white/5 p-4 text-xs">
           <p className="font-medium text-neutral-200">{profile.full_name}</p>
           <p className="mt-0.5 text-gold">{profile.role.replace(/_/g, " ")}</p>
-          <form action={signOut} className="mt-3">
-            <button className="flex items-center gap-2 text-neutral-400 hover:text-gold">
-              <LogOut className="h-4 w-4" /> Sign out
-            </button>
-          </form>
+          <div className="mt-3 flex items-center justify-between">
+            <form action={signOut}>
+              <button className="flex items-center gap-2 text-neutral-400 hover:text-gold">
+                <LogOut className="h-4 w-4" /> Sign out
+              </button>
+            </form>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
       <div className="flex-1 overflow-x-hidden">
-        <nav className="flex gap-4 overflow-x-auto border-b border-white/5 bg-card px-4 py-3 text-sm md:hidden">
+        <nav className="flex items-center gap-4 overflow-x-auto border-b border-white/5 bg-card px-4 py-3 text-sm md:hidden">
+          <ThemeToggle className="shrink-0" />
           {NAV.filter((n) => isManager || !n.managerOnly).map(({ href, label }) => (
             <Link key={href} href={href} className="whitespace-nowrap text-neutral-300 hover:text-gold">
               {label}

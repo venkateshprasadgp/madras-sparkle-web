@@ -1,6 +1,12 @@
 import type { Config } from "tailwindcss";
 
+const v = (name: string) => `rgb(var(${name}) / <alpha-value>)`;
+const neutral = Object.fromEntries(
+  [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((s) => [s, v(`--n-${s}`)]),
+);
+
 const config: Config = {
+  darkMode: "class",
   content: [
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,10 +15,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        royal: "#121212",
-        card: "#1a1a1a",
+        // Semantic, theme-aware colours (see globals.css for light/dark values).
+        royal: v("--c-bg"),
+        card: v("--c-surface"),
+        cream: v("--c-cream"),
+        white: v("--c-ink"),
+        neutral,
+        maroon: { DEFAULT: v("--c-maroon"), deep: "#4A0E17" },
         gold: {
-          DEFAULT: "#D4AF37",
+          DEFAULT: v("--c-gold"),
           light: "#FCF6BA",
           dark: "#AA771C",
           muted: "#BF953F",
