@@ -105,7 +105,11 @@ export async function POST(request: NextRequest) {
   if (!geminiRes.ok) {
     const detail = await geminiRes.text();
     console.error("Gemini blend failed", geminiRes.status, detail.slice(0, 500));
-    return NextResponse.json({ error: "The AI blend service is unavailable. Please try again." }, { status: 502 });
+    const error =
+      geminiRes.status === 429
+        ? "The AI blend has reached its usage limit for now. Please try again later, or use the manual overlay."
+        : "The AI blend service is unavailable. Please try again.";
+    return NextResponse.json({ error }, { status: 502 });
   }
 
   const result = await geminiRes.json();
