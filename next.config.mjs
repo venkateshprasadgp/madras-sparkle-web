@@ -1,4 +1,15 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  env: {
+    NEXT_PUBLIC_SUPABASE_ANON_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "",
+  },
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "**.supabase.co" }],
+  },
+  experimental: {
+    serverActions: { bodySizeLimit: "60mb" },
+  },
+};
 
 export default nextConfig;
