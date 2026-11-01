@@ -7,7 +7,7 @@ Showcase website, virtual try-on studio and admin CMS for **Madras Sparkle**, a 
 | Framework | Next.js 14 (App Router), TypeScript, Server Actions, Route Handlers |
 | UI | Tailwind CSS, Lucide icons, Cinzel + Plus Jakarta Sans. Dark luxury theme (`#121212`, `#1a1a1a`, `#D4AF37`) |
 | Data & auth | Supabase Postgres with RLS, Supabase Auth, Supabase Storage |
-| Try-on | Gemini image model (`gemini-3.1-flash-image`) with automatic fitting; Canvas only for background removal |
+| Try-on | Meta Muse Image (`muse-image-1.0`) + SAM 3.1 neck/face close-up, optional Gemini fallback; Canvas only for background removal |
 | Deploy | Vercel (CI/CD from `main`) |
 
 ## Features
@@ -16,7 +16,7 @@ Showcase website, virtual try-on studio and admin CMS for **Madras Sparkle**, a 
 - **Visitor registration** (`components/VisitorRegisterModal.tsx`): collects name, mobile number and area (dropdown), plus a mandatory photo-processing consent checkbox. It is backed by a Supabase anonymous session and the `register_visitor` RPC.
 - **AI Virtual Try-On Studio** (`/try-on`)
   - The visitor must be registered, and the per-phone quota (`system_settings.max_tryon_per_user`) is enforced server-side by the `consume_tryon` RPC. Trying the same SKU again within 2 hours is not counted again.
-  - Automatic AI fitting: once a photo is uploaded and a design is selected, `POST /api/tryon/blend` sends the visitor's photo and the product's transparent PNG to Gemini, which places the piece and returns the finished photo (no manual positioning).
+  - Automatic AI fitting: once a photo is uploaded and a design is selected, `POST /api/tryon/blend` finds the neck (or face) with SAM 3.1, sends an upscaled close-up plus the product's transparent PNG to Meta Muse Image, and composites the result back into the photo (no manual positioning).
   - Privacy: the photo lives only in React state and `sessionStorage`, and it is never uploaded to Storage. "Download Try-On Photo" and "Delete My Uploaded Photo" take effect immediately.
 - **Admin CMS** (`/admin`, login at `/admin/login`)
   - Role-based access: `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `CONTENT_EDITOR`. `middleware.ts` protects `/admin/*`. Settings, Users and Audit are restricted to administrators.
@@ -33,9 +33,11 @@ Copy `.env.example` to `.env.local`:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL |
 | `SUPABASE_ANON_KEY` | yes | Supabase anon (public) key. It is exposed to the browser as `NEXT_PUBLIC_SUPABASE_ANON_KEY` via `next.config.mjs`, which is safe because RLS enforces all access |
-| `GEMINI_API_KEY` | for AI blend | Google AI Studio API key. It is used only server-side in `app/api/tryon/blend` |
+| `GEMINI_API_KEY` | optional | Google AI Studio API key, used only server-side as a fallback image provider |
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | optional | Fallback WhatsApp number (digits only, e.g. `919876543210`). The CMS setting takes precedence |
 | `GEMINI_IMAGE_MODEL` | optional | Override for the Gemini image model id (default `gemini-3.1-flash-image`) |
+| `MODEL_API_KEY` | yes (for try-on) | Meta Model API key: Muse Image (`muse-image-1.0`) generates the try-on, SAM 3.1 locates the neck/face for the close-up |
+| `AI_IMAGE_PROVIDER` | optional | `meta` (default) or `gemini`. The other configured provider is used as a fallback |
 
 > **Demo mode:** without the Supabase variables, the site runs on built-in sample products (`lib/demo-data.ts`) with a browser-local quota. This lets you preview the showcase and try-on studio immediately. The admin CMS requires Supabase.
 
@@ -86,7 +88,7 @@ app/
   admin/login/                               Staff login
   admin/(cms)/                               Dashboard, products, banners, media, settings, users, audit
   api/admin/export/                          CSV / JSON backup exports
-  api/tryon/blend/                           Gemini AI blend
+  api/tryon/blend/                           AI try-on (Meta, Gemini fallback)
 components/                                  UI (VisitorRegisterModal, TryOnStudio, WhatsAppModal, admin/*)
 lib/                                         Supabase clients, data access, types, constants
 middleware.ts                                Session refresh + RBAC for /admin
