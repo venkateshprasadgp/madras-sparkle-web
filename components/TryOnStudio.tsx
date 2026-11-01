@@ -153,7 +153,9 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
   }
 
   function downloadResult() {
-    if (result) downloadDataUrl(result, `madras-sparkle-${sku ?? "try-on"}.png`);
+    if (!result) return;
+    const ext = result.match(/^data:image\/(\w+)/)?.[1]?.replace("jpeg", "jpg") ?? "png";
+    downloadDataUrl(result, `madras-sparkle-${sku ?? "try-on"}.${ext}`);
   }
 
   function deletePhoto() {
@@ -225,7 +227,7 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
               {busy && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60">
                   <LoaderCircle className="h-8 w-8 animate-spin text-gold" />
-                  <p className="text-sm text-neutral-200">
+                  <p className="text-sm font-medium text-[#fdf3e7]">
                     {blending ? "Fitting the jewellery and creating your photo…" : "Preparing try-on…"}
                   </p>
                 </div>
