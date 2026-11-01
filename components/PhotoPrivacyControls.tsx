@@ -4,16 +4,17 @@ import { Download, ShieldCheck, Trash2 } from "lucide-react";
 
 interface Props {
   disabled?: boolean;
+  downloadDisabled?: boolean;
   onDownload: () => void;
   onDelete: () => void;
 }
 
-export default function PhotoPrivacyControls({ disabled, onDownload, onDelete }: Props) {
+export default function PhotoPrivacyControls({ disabled, downloadDisabled, onDownload, onDelete }: Props) {
   return (
     <div className="card space-y-3 p-4">
       <div className="flex flex-wrap gap-3">
-        <button type="button" className="btn-gold" onClick={onDownload} disabled={disabled}>
-          <Download className="h-4 w-4" /> Download Composite Photo
+        <button type="button" className="btn-gold" onClick={onDownload} disabled={disabled || downloadDisabled}>
+          <Download className="h-4 w-4" /> Download Try-On Photo
         </button>
         <button
           type="button"

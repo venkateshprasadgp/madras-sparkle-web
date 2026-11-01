@@ -7,18 +7,17 @@ Showcase website, virtual try-on studio and admin CMS for **Madras Sparkle**, a 
 | Framework | Next.js 14 (App Router), TypeScript, Server Actions, Route Handlers |
 | UI | Tailwind CSS, Lucide icons, Cinzel + Plus Jakarta Sans. Dark luxury theme (`#121212`, `#1a1a1a`, `#D4AF37`) |
 | Data & auth | Supabase Postgres with RLS, Supabase Auth, Supabase Storage |
-| Try-on | HTML5 Canvas 2D + Gemini image model (`gemini-3.1-flash-image`) |
+| Try-on | Gemini image model (`gemini-3.1-flash-image`) with automatic fitting; Canvas only for background removal |
 | Deploy | Vercel (CI/CD from `main`) |
 
 ## Features
 
 - **Public showcase** (`/`, `/collections`, `/collections/[category]`, `/products/[sku]`): hero banners managed in the CMS, navigation across 7 categories, featured designs, an image and video media gallery, and a WhatsApp appointment modal. The modal sends a pre-filled `wa.me` message with the product title, SKU, the customer's locality, and their preferred date and time slot.
 - **Visitor registration** (`components/VisitorRegisterModal.tsx`): collects name, mobile number and area (dropdown), plus a mandatory photo-processing consent checkbox. It is backed by a Supabase anonymous session and the `register_visitor` RPC.
-- **Dual Virtual Try-On Studio** (`/try-on`)
+- **AI Virtual Try-On Studio** (`/try-on`)
   - The visitor must be registered, and the per-phone quota (`system_settings.max_tryon_per_user`) is enforced server-side by the `consume_tryon` RPC. Trying the same SKU again within 2 hours is not counted again.
-  - Manual 2D canvas: drag, pinch or scroll to scale, two-finger twist to rotate, and sliders for scale, rotation and vertical position.
-  - "AI Photorealistic Blend": `POST /api/tryon/blend` sends the visitor's photo and the product's transparent PNG to Gemini.
-  - Privacy: the photo lives only in React state and `sessionStorage`, and it is never uploaded to Storage. "Download Composite Photo" and "Delete My Uploaded Photo" take effect immediately.
+  - Automatic AI fitting: once a photo is uploaded and a design is selected, `POST /api/tryon/blend` sends the visitor's photo and the product's transparent PNG to Gemini, which places the piece and returns the finished photo (no manual positioning).
+  - Privacy: the photo lives only in React state and `sessionStorage`, and it is never uploaded to Storage. "Download Try-On Photo" and "Delete My Uploaded Photo" take effect immediately.
 - **Admin CMS** (`/admin`, login at `/admin/login`)
   - Role-based access: `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `CONTENT_EDITOR`. `middleware.ts` protects `/admin/*`. Settings, Users and Audit are restricted to administrators.
   - Products & SKUs: create, edit and delete products, with validation of the mandatory alphanumeric SKU (e.g. `MS-NK-916-001`), drag-and-drop uploads (JPG, PNG, WEBP, MP4), and a toggle between "Show Indicative Price" and "Hide Price".
