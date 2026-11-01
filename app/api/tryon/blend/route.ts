@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { DEMO_PRODUCTS } from "@/lib/demo-data";
 import { blendPrompt } from "@/lib/tryon";
-import { compositeRegion, prepareRegion, type InlineImage, type Region } from "@/lib/tryonRegion";
+import { generateImage, imageProviderConfigured } from "@/lib/imageProviders";
+import { compositeRegion, imageSize, prepareRegion, type InlineImage, type Region } from "@/lib/tryonRegion";
 import type { JewelryCategory } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -11,7 +12,6 @@ export const maxDuration = 60;
 
 const DATA_URL = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 const MAX_BASE64_LENGTH = 12 * 1024 * 1024;
-const GEMINI_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
 
 function parseDataUrl(value: unknown): InlineImage | null {
   if (typeof value !== "string" || value.length > MAX_BASE64_LENGTH) return null;
@@ -28,10 +28,10 @@ async function fetchAsInline(url: string): Promise<InlineImage> {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "AI blending is not configured (missing GEMINI_API_KEY)." }, { status: 503 });
+  if (!imageProviderConfigured()) {
+    return NextResponse.json({ error: "AI blending is not configured (set GEMINI_API_KEY or MODEL_API_KEY)." }, { status: 503 });
   }
+  const geminiKey = process.env.GEMINI_API_KEY;
 
   let body: { photo?: unknown; overlay?: unknown; sku?: unknown };
   try {
@@ -81,13 +81,18 @@ export async function POST(request: NextRequest) {
   if (!jewelry) return NextResponse.json({ error: "Jewelry overlay image is missing." }, { status: 400 });
 
   let region: Region | null = null;
-  try {
-    region = await prepareRegion(apiKey, photo, category);
-  } catch (err) {
-    console.error("Try-on region detection failed", err);
+  if (geminiKey) {
+    try {
+      region = await prepareRegion(geminiKey, photo, category);
+    } catch (err) {
+      console.error("Try-on region detection failed", err);
+    }
   }
 
-  let outcome = await generate(apiKey, blendPrompt(category, !!region), region?.crop ?? photo, jewelry);
+  const fullPhoto = async () => generateImage(blendPrompt(category), photo, jewelry, await imageSize(photo));
+  let outcome = region
+    ? await generateImage(blendPrompt(category, true), region.crop, jewelry, { width: 1024, height: 1024 })
+    : await fullPhoto();
   if ("status" in outcome) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
 
   let image = outcome;
@@ -96,7 +101,7 @@ export async function POST(request: NextRequest) {
       image = await compositeRegion(region, image);
     } catch (err) {
       console.error("Try-on composite failed", err);
-      outcome = await generate(apiKey, blendPrompt(category), photo, jewelry);
+      outcome = await fullPhoto();
       if ("status" in outcome) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
       image = outcome;
     }
@@ -108,50 +113,3 @@ export async function POST(request: NextRequest) {
   );
 }
 
-async function generate(
-  apiKey: string,
-  prompt: string,
-  photo: InlineImage,
-  jewelry: InlineImage,
-): Promise<InlineImage | { status: number; error: string }> {
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: photo.mimeType, data: photo.data } },
-              { inline_data: { mime_type: jewelry.mimeType, data: jewelry.data } },
-            ],
-          },
-        ],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
-      }),
-    },
-  );
-
-  if (!geminiRes.ok) {
-    const detail = await geminiRes.text();
-    console.error("Gemini blend failed", geminiRes.status, detail.slice(0, 500));
-    return {
-      status: 502,
-      error:
-        geminiRes.status === 429
-          ? "The AI blend has reached its usage limit for now. Please try again later."
-          : "The AI blend service is unavailable. Please try again.",
-    };
-  }
-
-  const result = await geminiRes.json();
-  type Part = { inlineData?: { mimeType: string; data: string }; inline_data?: { mime_type: string; data: string } };
-  const parts: Part[] = result?.candidates?.[0]?.content?.parts ?? [];
-  const imagePart = parts.find((p) => p.inlineData?.data || p.inline_data?.data);
-  if (imagePart?.inlineData) return { mimeType: imagePart.inlineData.mimeType, data: imagePart.inlineData.data };
-  if (imagePart?.inline_data) return { mimeType: imagePart.inline_data.mime_type, data: imagePart.inline_data.data };
-  return { status: 422, error: "The AI could not produce an image for this photo. Try a clearer, front-facing photo." };
-}

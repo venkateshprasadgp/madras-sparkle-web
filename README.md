@@ -36,6 +36,8 @@ Copy `.env.example` to `.env.local`:
 | `GEMINI_API_KEY` | for AI blend | Google AI Studio API key. It is used only server-side in `app/api/tryon/blend` |
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | optional | Fallback WhatsApp number (digits only, e.g. `919876543210`). The CMS setting takes precedence |
 | `GEMINI_IMAGE_MODEL` | optional | Override for the Gemini image model id (default `gemini-3.1-flash-image`) |
+| `MODEL_API_KEY` | optional | Meta Model API key for Muse Image (`muse-image-1.0`) |
+| `AI_IMAGE_PROVIDER` | optional | `meta` or `gemini` (default). The other configured provider is used as a fallback |
 
 > **Demo mode:** without the Supabase variables, the site runs on built-in sample products (`lib/demo-data.ts`) with a browser-local quota. This lets you preview the showcase and try-on studio immediately. The admin CMS requires Supabase.
 

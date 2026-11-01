@@ -66,6 +66,11 @@ export function cropBox(box2d: number[], width: number, height: number, pad: num
   return { left, top, width: s, height: s };
 }
 
+export async function imageSize(img: InlineImage): Promise<{ width: number; height: number }> {
+  const { width = 1024, height = 1024 } = await sharp(Buffer.from(img.data, "base64")).metadata();
+  return { width, height };
+}
+
 export type Region = { box: Box; crop: InlineImage; source: Buffer };
 
 /** Finds the body area for this category and returns an upscaled close-up of it for the image model. */
