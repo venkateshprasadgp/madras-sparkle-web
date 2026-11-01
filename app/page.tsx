@@ -170,7 +170,7 @@ export default async function HomePage() {
           <div>
             <h2 className="font-heading text-2xl text-[#f5c96a] md:text-3xl">See It On You First</h2>
             <p className="mt-2 max-w-xl text-sm text-[#fdf3e7]/85">
-              Upload a photo, place any piece by hand, or let our AI blend it photorealistically. Your photo never
+              Upload a photo, pick any piece, and our AI fits it on you photorealistically. Your photo never
               leaves your browser session.
             </p>
           </div>

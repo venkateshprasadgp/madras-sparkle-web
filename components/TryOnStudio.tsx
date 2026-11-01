@@ -1,21 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  Camera,
-  CircleAlert,
-  ImagePlus,
-  LoaderCircle,
-  Move,
-  RotateCw,
-  Sparkles,
-  UserPlus,
-  WandSparkles,
-} from "lucide-react";
+import { Camera, CircleAlert, ImagePlus, LoaderCircle, RotateCw, Sparkles, UserPlus } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { CATEGORIES, QUOTA_EXCEEDED_MESSAGE } from "@/lib/constants";
-import { DEFAULT_PLACEMENT } from "@/lib/tryon";
 import { downloadDataUrl, fileToDataUrl, loadImage } from "@/lib/photo";
 import { removeBackground } from "@/lib/removeBackground";
 import { usePhotoBuffer } from "@/lib/usePhotoBuffer";
@@ -23,20 +12,23 @@ import { useVisitor } from "./VisitorProvider";
 import PhotoPrivacyControls from "./PhotoPrivacyControls";
 import EnquireButton from "./EnquireButton";
 
-interface Transform {
-  x: number;
-  y: number;
-  scale: number;
-  rotation: number;
-}
-
-type PointerInfo = { x: number; y: number };
+type JewelryState = "loading" | "ready" | "failed";
 
 // Background removal is CPU-heavy; keep each processed piece so re-selecting it is instant.
-const jewelryCache = new Map<string, HTMLCanvasElement>();
+const jewelryCache = new Map<string, string | null>();
 
-function defaultTransform(product: Product | null): Transform {
-  return { x: 0.5, y: product ? DEFAULT_PLACEMENT[product.category].y : 0.6, scale: 1, rotation: 0 };
+async function prepareJewelry(url: string): Promise<string | null> {
+  if (jewelryCache.has(url)) return jewelryCache.get(url) ?? null;
+  const img = await loadImage(url, true);
+  let dataUrl: string | null;
+  try {
+    dataUrl = removeBackground(img).toDataURL("image/png");
+  } catch {
+    // Canvas tainted by host CORS settings: the server fetches the asset itself.
+    dataUrl = null;
+  }
+  jewelryCache.set(url, dataUrl);
+  return dataUrl;
 }
 
 export default function TryOnStudio({ products }: { products: Product[] }) {
@@ -48,77 +40,36 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
   const [selected, setSelected] = useState<Product | null>(
     () => products.find((p) => p.sku_id === initialSku) ?? null,
   );
-  const [transform, setTransform] = useState<Transform>(() => defaultTransform(selected));
   const [allowedSkus, setAllowedSkus] = useState<Set<string>>(new Set());
   const [checkingQuota, setCheckingQuota] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [aiResult, setAiResult] = useState<string | null>(null);
-  const [showAi, setShowAi] = useState(false);
-  const [blending, setBlending] = useState(false);
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const photoImg = useRef<HTMLImageElement | null>(null);
-  const jewelryImg = useRef<HTMLCanvasElement | null>(null);
-  const pointers = useRef<Map<number, PointerInfo>>(new Map());
-  const gesture = useRef<{ dist: number; angle: number; scale: number; rotation: number } | null>(null);
-  const [assetsVersion, setAssetsVersion] = useState(0);
+  const [jewelry, setJewelry] = useState<{ sku: string; state: JewelryState; overlay: string | null } | null>(null);
+  const [results, setResults] = useState<Record<string, string>>({});
+  const [blendingSku, setBlendingSku] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const attempted = useRef<Set<string>>(new Set());
 
   const visibleProducts = useMemo(
     () => (category === "ALL" ? products : products.filter((p) => p.category === category)),
     [products, category],
   );
-  const overlayActive = Boolean(selected && allowedSkus.has(selected.sku_id));
+  const sku = selected?.sku_id ?? null;
+  const result = sku ? results[sku] : undefined;
+  const allowed = Boolean(sku && allowedSkus.has(sku));
+  const jewelryReady = Boolean(sku && jewelry?.sku === sku && jewelry.state !== "loading");
+  const blending = Boolean(sku && blendingSku === sku);
+  const failed = Boolean(sku && photo && allowed && jewelryReady && !result && !blendingSku && attempted.current.has(sku));
 
-  // Load the visitor photo into an <img> for canvas drawing.
+  // Prepare the selected jewellery asset (background removed) to send alongside the photo.
   useEffect(() => {
-    if (!photo) {
-      photoImg.current = null;
-      setAssetsVersion((v) => v + 1);
-      return;
-    }
-    loadImage(photo).then((img) => {
-      photoImg.current = img;
-      setAssetsVersion((v) => v + 1);
-    });
-  }, [photo]);
-
-  // Load the selected jewelry asset.
-  useEffect(() => {
-    jewelryImg.current = null;
-    if (!selected) {
-      setAssetsVersion((v) => v + 1);
-      return;
-    }
-    const url = selected.transparent_png_url;
-    const cached = jewelryCache.get(url);
-    if (cached) {
-      jewelryImg.current = cached;
-      setAssetsVersion((v) => v + 1);
-      return;
-    }
-    setAssetsVersion((v) => v + 1);
+    if (!selected) return;
+    const { sku_id, transparent_png_url } = selected;
+    setJewelry({ sku: sku_id, state: "loading", overlay: null });
     let cancelled = false;
-    loadImage(url, true)
-      .then((img) => {
-        let processed: HTMLCanvasElement;
-        try {
-          processed = removeBackground(img);
-        } catch {
-          // Canvas tainted by host CORS settings: fall back to the original image.
-          processed = document.createElement("canvas");
-          processed.width = img.naturalWidth;
-          processed.height = img.naturalHeight;
-          processed.getContext("2d")!.drawImage(img, 0, 0);
-        }
-        jewelryCache.set(url, processed);
-        if (cancelled) return;
-        jewelryImg.current = processed;
-        setAssetsVersion((v) => v + 1);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load this jewellery image.");
-      });
+    prepareJewelry(transparent_png_url)
+      .then((overlay) => !cancelled && setJewelry({ sku: sku_id, state: "ready", overlay }))
+      .catch(() => !cancelled && setJewelry({ sku: sku_id, state: "failed", overlay: null }));
     return () => {
       cancelled = true;
     };
@@ -130,14 +81,14 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
     let cancelled = false;
     setCheckingQuota(true);
     setQuotaBlocked(false);
-    consumeTryon(selected.sku_id).then((result) => {
+    consumeTryon(selected.sku_id).then((res) => {
       if (cancelled) return;
       setCheckingQuota(false);
-      if (result.allowed) {
+      if (res.allowed) {
         setAllowedSkus((prev) => new Set(prev).add(selected.sku_id));
-      } else if (result.reason === "QUOTA_EXCEEDED") {
+      } else if (res.reason === "QUOTA_EXCEEDED") {
         setQuotaBlocked(true);
-      } else if (result.reason === "NOT_REGISTERED" || result.reason === "CONSENT_REQUIRED") {
+      } else if (res.reason === "NOT_REGISTERED" || res.reason === "CONSENT_REQUIRED") {
         requestRegistration();
       } else {
         setError("We couldn't start this try-on. Please try again.");
@@ -148,92 +99,33 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
     };
   }, [visitor, photo, selected, allowedSkus, consumeTryon, requestRegistration]);
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const base = photoImg.current;
-    if (!canvas || !base) return;
-    // Resizing reallocates the canvas buffer, so only do it when the photo changes.
-    if (canvas.width !== base.naturalWidth || canvas.height !== base.naturalHeight) {
-      canvas.width = base.naturalWidth;
-      canvas.height = base.naturalHeight;
-    }
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(base, 0, 0);
-    const jewel = jewelryImg.current;
-    if (!jewel || !selected || !overlayActive) return;
-    const w = canvas.width * DEFAULT_PLACEMENT[selected.category].width * transform.scale;
-    const h = w * (jewel.height / jewel.width);
-    ctx.save();
-    ctx.translate(transform.x * canvas.width, transform.y * canvas.height);
-    ctx.rotate((transform.rotation * Math.PI) / 180);
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = w * 0.02;
-    ctx.shadowOffsetY = w * 0.01;
-    ctx.drawImage(jewel, -w / 2, -h / 2, w, h);
-    ctx.restore();
-  }, [selected, transform, overlayActive]);
-
-  useEffect(draw, [draw, assetsVersion]);
-
-  // Mouse-wheel zoom (non-passive so the page doesn't scroll).
+  // Automatically fit the selected piece onto the photo as soon as everything is ready.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      setTransform((t) => ({ ...t, scale: clamp(t.scale * (e.deltaY < 0 ? 1.05 : 0.95), 0.2, 3) }));
-    };
-    canvas.addEventListener("wheel", onWheel, { passive: false });
-    return () => canvas.removeEventListener("wheel", onWheel);
-  }, [photo]);
+    if (!photo || !sku || !allowed || !jewelryReady || result || blendingSku || attempted.current.has(sku)) return;
+    attempted.current.add(sku);
+    const overlay = jewelry?.sku === sku ? jewelry.overlay : null;
+    setBlendingSku(sku);
+    setError(null);
+    fetch("/api/tryon/blend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photo, sku, overlay }),
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (json.reason === "QUOTA_EXCEEDED") setQuotaBlocked(true);
+          throw new Error(json.reason === "QUOTA_EXCEEDED" ? QUOTA_EXCEEDED_MESSAGE : json.error || "AI try-on failed.");
+        }
+        setResults((prev) => ({ ...prev, [sku]: json.image }));
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "AI try-on failed."))
+      .finally(() => setBlendingSku(null));
+  }, [photo, sku, allowed, jewelryReady, jewelry, result, blendingSku, retryCount]);
 
-  function toCanvasRatio(e: React.PointerEvent<HTMLCanvasElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height };
-  }
-
-  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!overlayActive) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointers.current.set(e.pointerId, toCanvasRatio(e));
-    if (pointers.current.size === 2) {
-      const [a, b] = Array.from(pointers.current.values());
-      gesture.current = {
-        dist: Math.hypot(b.x - a.x, b.y - a.y),
-        angle: Math.atan2(b.y - a.y, b.x - a.x),
-        scale: transform.scale,
-        rotation: transform.rotation,
-      };
-    }
-  }
-
-  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    const prev = pointers.current.get(e.pointerId);
-    if (!prev) return;
-    const next = toCanvasRatio(e);
-    pointers.current.set(e.pointerId, next);
-    if (pointers.current.size === 1) {
-      setTransform((t) => ({
-        ...t,
-        x: clamp(t.x + next.x - prev.x, 0, 1),
-        y: clamp(t.y + next.y - prev.y, 0, 1),
-      }));
-    } else if (pointers.current.size === 2 && gesture.current) {
-      const [a, b] = Array.from(pointers.current.values());
-      const g = gesture.current;
-      const dist = Math.hypot(b.x - a.x, b.y - a.y);
-      const angle = Math.atan2(b.y - a.y, b.x - a.x);
-      setTransform((t) => ({
-        ...t,
-        scale: clamp((g.scale * dist) / g.dist, 0.2, 3),
-        rotation: normalizeAngle(g.rotation + ((angle - g.angle) * 180) / Math.PI),
-      }));
-    }
-  }
-
-  function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
-    pointers.current.delete(e.pointerId);
-    if (pointers.current.size < 2) gesture.current = null;
+  function resetResults() {
+    attempted.current.clear();
+    setResults({});
   }
 
   async function onPhotoSelected(file: File | undefined) {
@@ -243,76 +135,30 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
       return;
     }
     setError(null);
-    setAiResult(null);
-    setShowAi(false);
+    resetResults();
     savePhoto(await fileToDataUrl(file));
   }
 
   function selectProduct(product: Product) {
     setSelected(product);
-    setTransform(defaultTransform(product));
     setQuotaBlocked(false);
-    setAiResult(null);
-    setShowAi(false);
     setError(null);
   }
 
-  function rasterizeJewelry(): string | null {
-    const c = jewelryImg.current;
-    if (!c) return null;
-    try {
-      return c.toDataURL("image/png");
-    } catch {
-      return null;
-    }
-  }
-
-  async function aiBlend() {
-    if (!photo || !selected) return;
-    setBlending(true);
+  function retry() {
+    if (!sku) return;
+    attempted.current.delete(sku);
     setError(null);
-    try {
-      const res = await fetch("/api/tryon/blend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photo, sku: selected.sku_id, overlay: rasterizeJewelry() }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        if (json.reason === "QUOTA_EXCEEDED") setQuotaBlocked(true);
-        throw new Error(json.reason === "QUOTA_EXCEEDED" ? QUOTA_EXCEEDED_MESSAGE : json.error);
-      }
-      setAiResult(json.image);
-      setShowAi(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "AI blend failed.");
-    } finally {
-      setBlending(false);
-    }
+    setRetryCount((n) => n + 1);
   }
 
-  function downloadComposite() {
-    const name = `madras-sparkle-${selected?.sku_id ?? "try-on"}.jpg`;
-    if (showAi && aiResult) return downloadDataUrl(aiResult, name.replace(".jpg", "-ai.png"));
-    try {
-      const url = canvasRef.current?.toDataURL("image/jpeg", 0.92);
-      if (url) downloadDataUrl(url, name);
-    } catch {
-      setError("This jewellery image cannot be exported due to its hosting settings.");
-    }
+  function downloadResult() {
+    if (result) downloadDataUrl(result, `madras-sparkle-${sku ?? "try-on"}.png`);
   }
 
   function deletePhoto() {
     clearPhoto();
-    photoImg.current = null;
-    setAiResult(null);
-    setShowAi(false);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-      canvas.width = 0;
-      canvas.height = 0;
-    }
+    resetResults();
   }
 
   if (!ready) {
@@ -335,6 +181,7 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
   }
 
   const remaining = Math.max(0, maxTryons - visitor.tryonCount);
+  const busy = Boolean(photo && selected && !quotaBlocked && (checkingQuota || blending || (allowed && !jewelryReady)));
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -369,34 +216,28 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
             </div>
           ) : (
             <>
-              <canvas
-                ref={canvasRef}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                className={`max-h-[70vh] w-auto max-w-full touch-none rounded-xl ${showAi ? "hidden" : ""} ${overlayActive ? "cursor-move" : ""}`}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={result ?? photo}
+                alt={result ? `You wearing ${selected?.title ?? "the selected design"}` : "Your photo"}
+                className="max-h-[70vh] w-auto max-w-full rounded-xl"
               />
-              {showAi && aiResult && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={aiResult} alt="AI blended try-on" className="max-h-[70vh] rounded-xl" />
-              )}
-              {(checkingQuota || blending) && (
+              {busy && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60">
                   <LoaderCircle className="h-8 w-8 animate-spin text-gold" />
-                  <p className="text-sm text-neutral-200">{blending ? "Creating your photorealistic blend…" : "Preparing try-on…"}</p>
+                  <p className="text-sm text-neutral-200">
+                    {blending ? "Fitting the jewellery and creating your photo…" : "Preparing try-on…"}
+                  </p>
                 </div>
+              )}
+              {!selected && (
+                <p className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-sm text-neutral-100">
+                  Choose a design to see it on you
+                </p>
               )}
             </>
           )}
         </div>
-
-        {photo && aiResult && (
-          <div className="inline-flex rounded-full border border-white/10 p-1 text-sm">
-            <button onClick={() => setShowAi(false)} className={`rounded-full px-4 py-1.5 ${!showAi ? "bg-gold text-royal" : "text-neutral-400"}`}>Manual Overlay</button>
-            <button onClick={() => setShowAi(true)} className={`rounded-full px-4 py-1.5 ${showAi ? "bg-gold text-royal" : "text-neutral-400"}`}>AI Blend</button>
-          </div>
-        )}
 
         {quotaBlocked && (
           <div className="card flex flex-col gap-3 border-gold/40 p-5 sm:flex-row sm:items-center">
@@ -405,9 +246,23 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
             <EnquireButton product={selected} className="btn-gold" label="Request Home Appointment" />
           </div>
         )}
-        {error && <p className="rounded-lg bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+        {error && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg bg-red-500/10 p-3 text-sm text-red-300">
+            <p className="flex-1">{error}</p>
+            {failed && !quotaBlocked && (
+              <button className="btn-outline" onClick={retry}>
+                <RotateCw className="h-4 w-4" /> Try Again
+              </button>
+            )}
+          </div>
+        )}
 
-        <PhotoPrivacyControls disabled={!photo} onDownload={downloadComposite} onDelete={deletePhoto} />
+        <PhotoPrivacyControls
+          disabled={!photo}
+          downloadDisabled={!result}
+          onDownload={downloadResult}
+          onDelete={deletePhoto}
+        />
       </div>
 
       <aside className="space-y-4">
@@ -431,13 +286,14 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
               </button>
             ))}
           </div>
-          <div className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1">
+          <div className="grid max-h-96 grid-cols-3 gap-2 overflow-y-auto pr-1">
             {visibleProducts.map((p) => (
               <button
                 key={p.id}
                 onClick={() => selectProduct(p)}
+                disabled={blending}
                 title={`${p.title} (${p.sku_id})`}
-                className={`overflow-hidden rounded-lg border-2 ${selected?.id === p.id ? "border-gold" : "border-transparent hover:border-gold/40"}`}
+                className={`overflow-hidden rounded-lg border-2 disabled:cursor-wait ${selected?.id === p.id ? "border-gold" : "border-transparent hover:border-gold/40"}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.featured_image_url} alt={p.title} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
@@ -451,62 +307,12 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
           )}
         </div>
 
-        <div className={`card space-y-4 p-4 ${overlayActive && !showAi ? "" : "pointer-events-none opacity-50"}`}>
-          <p className="label flex items-center gap-2"><Move className="h-3.5 w-3.5" /> Manual Controls</p>
-          <p className="text-xs text-neutral-500">Drag to move, pinch or scroll to resize, two-finger twist to rotate.</p>
-          <Slider label="Scale" min={0.2} max={3} step={0.01} value={transform.scale} display={`${Math.round(transform.scale * 100)}%`}
-            onChange={(v) => setTransform((t) => ({ ...t, scale: v }))} />
-          <Slider label="Rotation" min={-180} max={180} step={1} value={transform.rotation} display={`${Math.round(transform.rotation)}°`}
-            onChange={(v) => setTransform((t) => ({ ...t, rotation: v }))} />
-          <Slider label="Vertical Position" min={0} max={1} step={0.001} value={transform.y} display={`${Math.round(transform.y * 100)}%`}
-            onChange={(v) => setTransform((t) => ({ ...t, y: v }))} />
-          <button className="btn-outline w-full" onClick={() => setTransform(defaultTransform(selected))}>
-            <RotateCw className="h-4 w-4" /> Reset Position
-          </button>
-        </div>
-
-        <button className="btn-gold w-full py-3" disabled={!overlayActive || blending} onClick={aiBlend}>
-          {blending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
-          AI Photorealistic Blend
-        </button>
         <p className="flex items-start gap-2 text-xs text-neutral-500">
           <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-          Powered by Google Gemini. Your photo is sent securely for this one request and is not stored.
+          Our AI automatically fits the selected piece onto your photo. Your photo is sent securely for this one
+          request and is not stored.
         </p>
       </aside>
     </div>
   );
-}
-
-function Slider({
-  label,
-  min,
-  max,
-  step,
-  value,
-  display,
-  onChange,
-}: {
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  display: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="block text-xs text-neutral-400">
-      <span className="flex justify-between"><span>{label}</span><span className="text-gold">{display}</span></span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-1 w-full accent-[#D4AF37]" />
-    </label>
-  );
-}
-
-function clamp(v: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, v));
-}
-
-function normalizeAngle(deg: number) {
-  return ((((deg + 180) % 360) + 360) % 360) - 180;
 }
