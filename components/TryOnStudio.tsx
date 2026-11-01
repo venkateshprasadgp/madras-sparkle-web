@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Camera, CircleAlert, ImagePlus, LoaderCircle, RotateCw, Sparkles, UserPlus } from "lucide-react";
+import { Camera, CircleAlert, Eye, ImagePlus, LoaderCircle, RotateCw, Sparkles, UserPlus } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { CATEGORIES, QUOTA_EXCEEDED_MESSAGE } from "@/lib/constants";
 import { downloadDataUrl, fileToDataUrl, loadImage } from "@/lib/photo";
@@ -13,6 +13,14 @@ import PhotoPrivacyControls from "./PhotoPrivacyControls";
 import EnquireButton from "./EnquireButton";
 
 type JewelryState = "loading" | "ready" | "failed";
+
+const BLEND_STAGES: { after: number; text: string }[] = [
+  { after: 0, text: "Finding your neckline…" },
+  { after: 4, text: "Fitting the jewellery on you…" },
+  { after: 12, text: "Matching light and shadows…" },
+  { after: 22, text: "Adding the finishing touches…" },
+];
+const TYPICAL_BLEND_SECONDS = 25;
 
 // Background removal is CPU-heavy; keep each processed piece so re-selecting it is instant.
 const jewelryCache = new Map<string, string | null>();
@@ -48,6 +56,8 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
   const [results, setResults] = useState<Record<string, string>>({});
   const [blendingSku, setBlendingSku] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [showOriginal, setShowOriginal] = useState(false);
   const attempted = useRef<Set<string>>(new Set());
 
   const visibleProducts = useMemo(
@@ -122,6 +132,14 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
       .catch((err) => setError(err instanceof Error ? err.message : "AI try-on failed."))
       .finally(() => setBlendingSku(null));
   }, [photo, sku, allowed, jewelryReady, jewelry, result, blendingSku, retryCount]);
+
+  useEffect(() => {
+    if (!blending) return;
+    setElapsed(0);
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed((Date.now() - started) / 1000), 500);
+    return () => clearInterval(timer);
+  }, [blending]);
 
   function resetResults() {
     attempted.current.clear();
@@ -220,17 +238,42 @@ export default function TryOnStudio({ products }: { products: Product[] }) {
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={result ?? photo}
-                alt={result ? `You wearing ${selected?.title ?? "the selected design"}` : "Your photo"}
+                src={result && !showOriginal ? result : photo}
+                alt={result && !showOriginal ? `You wearing ${selected?.title ?? "the selected design"}` : "Your photo"}
                 className="max-h-[70vh] w-auto max-w-full rounded-xl"
               />
               {busy && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60">
                   <LoaderCircle className="h-8 w-8 animate-spin text-gold" />
                   <p className="text-sm font-medium text-[#fdf3e7]">
-                    {blending ? "Fitting the jewellery and creating your photo…" : "Preparing try-on…"}
+                    {blending
+                      ? [...BLEND_STAGES].reverse().find((s) => elapsed >= s.after)?.text
+                      : "Preparing try-on…"}
                   </p>
+                  {blending && (
+                    <>
+                      <div className="h-1.5 w-48 overflow-hidden rounded-full bg-white/20">
+                        <div
+                          className="h-full rounded-full bg-gold transition-all duration-500"
+                          style={{ width: `${Math.min(95, (elapsed / TYPICAL_BLEND_SECONDS) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-[#fdf3e7]/80">This usually takes about {TYPICAL_BLEND_SECONDS} seconds</p>
+                    </>
+                  )}
                 </div>
+              )}
+              {result && !busy && (
+                <button
+                  type="button"
+                  className="absolute bottom-4 right-4 flex select-none items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-sm text-[#fdf3e7]"
+                  onPointerDown={() => setShowOriginal(true)}
+                  onPointerUp={() => setShowOriginal(false)}
+                  onPointerLeave={() => setShowOriginal(false)}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  <Eye className="h-4 w-4" /> {showOriginal ? "Original photo" : "Hold to compare"}
+                </button>
               )}
               {!selected && (
                 <p className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-sm text-neutral-100">

@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { DEMO_PRODUCTS } from "@/lib/demo-data";
 import { blendPrompt } from "@/lib/tryon";
-import { generateImage, imageProviderConfigured } from "@/lib/imageProviders";
-import { compositeRegion, imageSize, prepareRegion, type InlineImage, type Region } from "@/lib/tryonRegion";
+import { generateImage, imageProviderConfigured, type GenerateResult } from "@/lib/imageProviders";
+import { compositeRegion, fitTo, imageSize, prepareRegion, type InlineImage, type Region } from "@/lib/tryonRegion";
 import type { JewelryCategory } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -29,9 +29,9 @@ async function fetchAsInline(url: string): Promise<InlineImage> {
 
 export async function POST(request: NextRequest) {
   if (!imageProviderConfigured()) {
-    return NextResponse.json({ error: "AI blending is not configured (set GEMINI_API_KEY or MODEL_API_KEY)." }, { status: 503 });
+    return NextResponse.json({ error: "AI blending is not configured (set MODEL_API_KEY)." }, { status: 503 });
   }
-  const geminiKey = process.env.GEMINI_API_KEY;
+  const metaKey = process.env.MODEL_API_KEY;
 
   let body: { photo?: unknown; overlay?: unknown; sku?: unknown };
   try {
@@ -81,15 +81,19 @@ export async function POST(request: NextRequest) {
   if (!jewelry) return NextResponse.json({ error: "Jewelry overlay image is missing." }, { status: 400 });
 
   let region: Region | null = null;
-  if (geminiKey) {
+  if (metaKey) {
     try {
-      region = await prepareRegion(geminiKey, photo, category);
+      region = await prepareRegion(metaKey, photo, category);
     } catch (err) {
       console.error("Try-on region detection failed", err);
     }
   }
 
-  const fullPhoto = async () => generateImage(blendPrompt(category), photo, jewelry, await imageSize(photo));
+  const fullPhoto = async (): Promise<GenerateResult> => {
+    const size = await imageSize(photo);
+    const generated = await generateImage(blendPrompt(category), photo, jewelry, size);
+    return "status" in generated ? generated : fitTo(generated, size).catch(() => generated);
+  };
   let outcome = region
     ? await generateImage(blendPrompt(category, true), region.crop, jewelry, { width: 1024, height: 1024 })
     : await fullPhoto();

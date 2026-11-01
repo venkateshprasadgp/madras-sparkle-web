@@ -18,7 +18,7 @@ function configured(): Provider[] {
   const available: Provider[] = [];
   if (process.env.MODEL_API_KEY) available.push("meta");
   if (process.env.GEMINI_API_KEY) available.push("gemini");
-  const preferred = process.env.AI_IMAGE_PROVIDER === "meta" ? "meta" : "gemini";
+  const preferred = process.env.AI_IMAGE_PROVIDER === "gemini" ? "gemini" : "meta";
   return available.sort((a, b) => Number(b === preferred) - Number(a === preferred));
 }
 

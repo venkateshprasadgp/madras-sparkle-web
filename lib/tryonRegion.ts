@@ -5,65 +5,78 @@ import type { JewelryCategory } from "./types";
 export type InlineImage = { mimeType: string; data: string };
 export type Box = { left: number; top: number; width: number; height: number };
 
-const DETECT_MODEL = process.env.GEMINI_DETECT_MODEL || "gemini-2.5-flash";
 const WORK_SIZE = 1024;
+const SAM_TIMEOUT_MS = 15_000;
 
-const REGION: Record<JewelryCategory, { target: string; pad: number }> = {
-  NECKLACE: { target: "the person's neck, collarbones and upper chest (from the chin down to the middle of the chest, shoulder to shoulder)", pad: 0.15 },
-  PENDANT: { target: "the person's neck, collarbones and upper chest (from the chin down to the middle of the chest, shoulder to shoulder)", pad: 0.15 },
-  HARAM: { target: "the person's neck and torso (from the chin down to the waist, shoulder to shoulder)", pad: 0.1 },
-  EARRINGS_JUMMIKI: { target: "the person's whole head including both ears and the neck", pad: 0.2 },
-  NOSE_PINS: { target: "the person's face", pad: 0.25 },
-  BANGLES_BRACELET: { target: "the person's hands and wrists", pad: 0.25 },
-  RINGS: { target: "the person's hands", pad: 0.25 },
+type Px = { x1: number; y1: number; x2: number; y2: number };
+
+/** SAM 3.1 concept to locate, and how to grow its box into the area the image model should see. */
+const REGION: Partial<Record<JewelryCategory, { concept: string; frame: (b: Px) => { cx: number; top: number; side: number } }>> = {
+  NECKLACE: { concept: "neck", frame: (b) => neckFrame(b, 3.4, 0.22) },
+  PENDANT: { concept: "neck", frame: (b) => neckFrame(b, 3.6, 0.2) },
+  HARAM: { concept: "neck", frame: (b) => neckFrame(b, 5.2, 0.12) },
+  EARRINGS_JUMMIKI: { concept: "head", frame: (b) => padFrame(b, 0.35) },
+  NOSE_PINS: { concept: "face", frame: (b) => padFrame(b, 0.3) },
 };
 
-async function detectRegion(apiKey: string, photo: InlineImage, category: JewelryCategory): Promise<number[] | null> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(DETECT_MODEL)}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inline_data: { mime_type: photo.mimeType, data: photo.data } },
-              {
-                text: `Return the bounding box of ${REGION[category].target} as JSON {"box_2d":[ymin,xmin,ymax,xmax]} with coordinates normalized to 0-1000. If there is no person, return {"box_2d":null}.`,
-              },
-            ],
-          },
-        ],
-        generationConfig: { responseMimeType: "application/json", temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-      }),
-    },
-  );
-  if (!res.ok) return null;
-  const json = await res.json();
-  const text: string | undefined = json?.candidates?.[0]?.content?.parts?.find((p: { text?: string }) => p.text)?.text;
-  if (!text) return null;
-  const parsed = JSON.parse(text);
-  const box = Array.isArray(parsed) ? parsed[0]?.box_2d : parsed?.box_2d;
-  return Array.isArray(box) && box.length === 4 && box.every((n) => Number.isFinite(n)) ? box : null;
+function neckFrame(b: Px, widthFactor: number, above: number) {
+  const nw = b.x2 - b.x1;
+  const side = Math.max(nw * widthFactor, (b.y2 - b.y1) * 4);
+  return { cx: (b.x1 + b.x2) / 2, top: b.y1 - side * above, side };
 }
 
-/** Square crop around the detected region, or null when the photo is already a close-up. */
-export function cropBox(box2d: number[], width: number, height: number, pad: number): Box | null {
-  const [ymin, xmin, ymax, xmax] = box2d.map((n) => Math.min(1000, Math.max(0, n)) / 1000);
-  const bw = (xmax - xmin) * width;
-  const bh = (ymax - ymin) * height;
-  if (bw < 8 || bh < 8) return null;
-  let side = Math.max(bw, bh) * (1 + 2 * pad);
-  side = Math.min(side, width, height);
-  if (side * side > 0.6 * width * height) return null;
-  const cx = ((xmin + xmax) / 2) * width;
-  const cy = ((ymin + ymax) / 2) * height;
-  const left = Math.round(Math.min(Math.max(cx - side / 2, 0), width - side));
-  const top = Math.round(Math.min(Math.max(cy - side / 2, 0), height - side));
-  const s = Math.floor(side);
-  return { left, top, width: s, height: s };
+function padFrame(b: Px, pad: number) {
+  const side = Math.max(b.x2 - b.x1, b.y2 - b.y1) * (1 + 2 * pad);
+  return { cx: (b.x1 + b.x2) / 2, top: (b.y1 + b.y2) / 2 - side / 2, side };
+}
+
+/** Largest box SAM 3.1 finds for the concept, in pixels of the (EXIF-rotated) image. */
+async function detectBox(apiKey: string, image: Buffer, concept: string): Promise<Px | null> {
+  const res = await fetch("https://api.meta.ai/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream", Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(SAM_TIMEOUT_MS),
+    body: JSON.stringify({
+      model: "sam-3.1",
+      stream: true,
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: concept },
+            { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}` },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) return null;
+  let text = "";
+  for (const line of (await res.text()).split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    try {
+      const ev = JSON.parse(line.slice(5));
+      if (ev.type === "response.output_text.delta") text += ev.delta;
+    } catch {
+      // keep-alive or non-JSON line
+    }
+  }
+  let best: Px | null = null;
+  for (const m of Array.from(text.matchAll(/<\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+)/g))) {
+    const [x1, y1, x2, y2] = m.slice(1).map(Number);
+    if (!best || (x2 - x1) * (y2 - y1) > (best.x2 - best.x1) * (best.y2 - best.y1)) best = { x1, y1, x2, y2 };
+  }
+  return best;
+}
+
+/** Square crop clamped to the image, or null when the photo is already a close-up. */
+export function cropBox(frame: { cx: number; top: number; side: number }, width: number, height: number): Box | null {
+  const side = Math.floor(Math.min(frame.side, width, height));
+  if (side < 64 || side * side > 0.6 * width * height) return null;
+  const left = Math.round(Math.min(Math.max(frame.cx - side / 2, 0), width - side));
+  const top = Math.round(Math.min(Math.max(frame.top, 0), height - side));
+  return { left, top, width: side, height: side };
 }
 
 export async function imageSize(img: InlineImage): Promise<{ width: number; height: number }> {
@@ -71,16 +84,27 @@ export async function imageSize(img: InlineImage): Promise<{ width: number; heig
   return { width, height };
 }
 
+/** Resizes a generated image back to the source photo's pixel size so the framing matches the upload. */
+export async function fitTo(img: InlineImage, size: { width: number; height: number }): Promise<InlineImage> {
+  const out = await sharp(Buffer.from(img.data, "base64"))
+    .resize(size.width, size.height, { fit: "fill", kernel: "lanczos3" })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  return { mimeType: "image/jpeg", data: out.toString("base64") };
+}
+
 export type Region = { box: Box; crop: InlineImage; source: Buffer };
 
 /** Finds the body area for this category and returns an upscaled close-up of it for the image model. */
 export async function prepareRegion(apiKey: string, photo: InlineImage, category: JewelryCategory): Promise<Region | null> {
-  const source = await sharp(Buffer.from(photo.data, "base64")).rotate().toBuffer();
+  const spec = REGION[category];
+  if (!spec) return null;
+  const source = await sharp(Buffer.from(photo.data, "base64")).rotate().jpeg({ quality: 95 }).toBuffer();
   const { width, height } = await sharp(source).metadata();
   if (!width || !height) return null;
-  const box2d = await detectRegion(apiKey, photo, category);
-  if (!box2d) return null;
-  const box = cropBox(box2d, width, height, REGION[category].pad);
+  const found = await detectBox(apiKey, source, spec.concept);
+  if (!found) return null;
+  const box = cropBox(spec.frame(found), width, height);
   if (!box) return null;
   const crop = await sharp(source)
     .extract(box)
