@@ -32,6 +32,7 @@ export default function SiteFooter() {
           <ul className="space-y-1.5 text-sm">
             <li><Link href="/try-on" className="text-neutral-200 hover:text-maroon">Virtual Try-On Studio</Link></li>
             <li><Link href="/collections" className="text-neutral-200 hover:text-maroon">All Jewellery</Link></li>
+            <li><Link href="/devin-guide" className="text-neutral-200 hover:text-maroon">Devin AI Guide</Link></li>
             <li><Link href="/admin/login" className="text-neutral-200 hover:text-maroon">Staff Login</Link></li>
           </ul>
         </div>
